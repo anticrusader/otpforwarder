@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "683764299653",
+    "project_id": "otp-forwarder-app",
+    "storage_bucket": "otp-forwarder-app.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:683764299653:android:b666716a1039306869f6ec",
+        "android_client_info": {
+          "package_name": "com.example.otpforwarder"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyCX9guUqAqT0XoTFhGI6ZzhwJx8fDme0Hc"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
