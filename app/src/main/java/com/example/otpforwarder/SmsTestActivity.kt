@@ -2,13 +2,11 @@ package com.example.otpforwarder
 
 import android.Manifest
 import android.content.pm.PackageManager
-import android.database.Cursor
 import android.net.Uri
 import android.os.Bundle
 import android.util.Log
 import android.widget.Button
 import android.widget.TextView
-import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
 
@@ -132,7 +130,7 @@ class SmsTestActivity : AppCompatActivity() {
                     result.append("Date: ${java.util.Date(date)}\n")
                     
                     // Check if it contains OTP
-                    val otp = OTPForwarder.extractOtpFromMessage(body)
+                    val otp = `OTPForwarder`.extractOtpFromMessage(body)
                     if (otp != null) {
                         result.append("🔑 OTP FOUND: $otp\n")
                     }
