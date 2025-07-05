@@ -2,14 +2,16 @@ package com.example.otpforwarder
 
 import android.Manifest
 import android.app.*
-import android.content.BroadcastReceiver
-import android.content.Context
-import android.content.Intent
-import android.content.IntentFilter
+import android.content.*
 import android.content.pm.PackageManager
+import android.database.ContentObserver
+import android.database.Cursor
+import android.net.Uri
 import android.os.Build
 import android.os.Bundle
+import android.os.Handler
 import android.os.IBinder
+import android.os.Looper
 import android.provider.Telephony
 import android.telephony.SmsMessage
 import android.util.Log
@@ -24,7 +26,6 @@ import androidx.core.app.NotificationCompat
 import okhttp3.*
 import okhttp3.MediaType.Companion.toMediaType
 import org.json.JSONObject
-import java.io.IOException
 import java.text.SimpleDateFormat
 import java.util.*
 import java.util.concurrent.ExecutorService
@@ -36,11 +37,14 @@ class MainActivity : AppCompatActivity() {
     companion object {
         private const val SMS_PERMISSION_REQUEST = 100
         private const val TAG = "OTPForwarder"
+        var isAppActive = false
     }
 
     private lateinit var autoForwardSwitch: Switch
     private lateinit var lastOtpTextView: TextView
     private lateinit var testButton: Button
+    private lateinit var debugButton: Button
+    private var smsObserver: SmsObserver? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -52,6 +56,7 @@ class MainActivity : AppCompatActivity() {
         autoForwardSwitch = findViewById(R.id.autoForwardSwitch)
         lastOtpTextView = findViewById(R.id.lastOtpTextView)
         testButton = findViewById(R.id.testButton)
+        debugButton = findViewById(R.id.debugButton) // Add this button to your layout
 
         // Check and request permissions
         checkAllPermissions()
@@ -59,29 +64,69 @@ class MainActivity : AppCompatActivity() {
         // Set up test button
         testButton.setOnClickListener { testMakeForwarding() }
 
+        // Set up debug button
+        debugButton.setOnClickListener {
+            val intent = Intent(this, SmsTestActivity::class.java)
+            startActivity(intent)
+        }
+
         // Set up auto-forward switch
         autoForwardSwitch.setOnCheckedChangeListener { _, isChecked ->
             Log.d(TAG, "Auto-forward switch changed: $isChecked")
+
+            // Save preference
+            getSharedPreferences("OTPForwarder", Context.MODE_PRIVATE)
+                .edit()
+                .putBoolean("auto_forward_enabled", isChecked)
+                .apply()
+
             if (isChecked) {
                 if (checkAllPermissions()) {
+                    // Check if notification access is enabled
+                    if (!isNotificationServiceEnabled()) {
+                        Toast.makeText(this, "⚠️ Please enable Notification Access", Toast.LENGTH_LONG).show()
+                        openNotificationAccessSettings()
+                        autoForwardSwitch.isChecked = false
+                        return@setOnCheckedChangeListener
+                    }
+
                     startOTPService()
-                    Toast.makeText(this, "✅ OTP forwarding enabled (background service)", Toast.LENGTH_LONG).show()
-                    lastOtpTextView.text = "📱 Background service listening for SMS..."
+                    // Also start SMS observer as backup
+                    startSmsObserver()
+                    Toast.makeText(this, "✅ OTP forwarding enabled", Toast.LENGTH_LONG).show()
+                    lastOtpTextView.text = "📱 Monitoring SMS via notifications..."
                 } else {
                     autoForwardSwitch.isChecked = false
                 }
             } else {
                 stopOTPService()
+                stopSmsObserver()
                 Toast.makeText(this, "❌ OTP forwarding disabled", Toast.LENGTH_SHORT).show()
                 lastOtpTextView.text = "🔍 No OTPs forwarded yet"
             }
         }
 
-        // Check if service is already running
-        if (OTPService.isServiceRunning) {
+        // Restore preference
+        val prefs = getSharedPreferences("OTPForwarder", Context.MODE_PRIVATE)
+        val isEnabled = prefs.getBoolean("auto_forward_enabled", false)
+        if (isEnabled) {
             autoForwardSwitch.isChecked = true
-            lastOtpTextView.text = "📱 Background service listening for SMS..."
         }
+    }
+
+    override fun onResume() {
+        super.onResume()
+        isAppActive = true
+
+        // Check for missed messages when app resumes
+        if (autoForwardSwitch.isChecked) {
+            checkRecentSms()
+        }
+    }
+
+    override fun onPause() {
+        super.onPause()
+        isAppActive = false
     }
 
     private fun checkAllPermissions(): Boolean {
@@ -101,6 +146,8 @@ class MainActivity : AppCompatActivity() {
                 permissions.add(Manifest.permission.POST_NOTIFICATIONS)
             }
         }
+
+        Log.d(TAG, "Permissions needed: ${permissions.size}")
 
         return if (permissions.isNotEmpty()) {
             ActivityCompat.requestPermissions(this, permissions.toTypedArray(), SMS_PERMISSION_REQUEST)
@@ -142,6 +189,84 @@ class MainActivity : AppCompatActivity() {
         Log.d(TAG, "OTP service stopped")
     }
 
+    private fun startSmsObserver() {
+        try {
+            smsObserver = SmsObserver(this, Handler(Looper.getMainLooper()))
+            contentResolver.registerContentObserver(
+                Uri.parse("content://sms/"),
+                true,
+                smsObserver!!
+            )
+            Log.d(TAG, "SMS Observer started")
+        } catch (e: Exception) {
+            Log.e(TAG, "Error starting SMS observer", e)
+        }
+    }
+
+    private fun stopSmsObserver() {
+        try {
+            smsObserver?.let {
+                contentResolver.unregisterContentObserver(it)
+                smsObserver = null
+                Log.d(TAG, "SMS Observer stopped")
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Error stopping SMS observer", e)
+        }
+    }
+
+    private fun checkRecentSms() {
+        try {
+            val cursor = contentResolver.query(
+                Uri.parse("content://sms/inbox"),
+                null,
+                "date > ?",
+                arrayOf((System.currentTimeMillis() - 60000).toString()), // Last minute
+                "date DESC"
+            )
+
+            cursor?.use {
+                if (it.moveToFirst()) {
+                    val bodyIndex = it.getColumnIndex("body")
+                    val addressIndex = it.getColumnIndex("address")
+
+                    if (bodyIndex >= 0 && addressIndex >= 0) {
+                        val body = it.getString(bodyIndex)
+                        val address = it.getString(addressIndex)
+
+                        Log.d(TAG, "Recent SMS found: $body")
+
+                        val otp = OTPForwarder.extractOtpFromMessage(body)
+                        if (otp != null) {
+                            Log.d(TAG, "OTP found in recent SMS: $otp")
+                            OTPForwarder.forwardOtpViaMake(otp, body, address, this)
+                        }
+                    }
+                }
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Error checking recent SMS", e)
+        }
+    }
+
+    private fun isNotificationServiceEnabled(): Boolean {
+        val pkgName = packageName
+        val flat = android.provider.Settings.Secure.getString(
+            contentResolver,
+            "enabled_notification_listeners"
+        )
+        return flat != null && flat.contains(pkgName)
+    }
+
+    private fun openNotificationAccessSettings() {
+        try {
+            val intent = Intent("android.settings.ACTION_NOTIFICATION_LISTENER_SETTINGS")
+            startActivity(intent)
+        } catch (e: Exception) {
+            Toast.makeText(this, "Please enable Notification Access in Settings", Toast.LENGTH_LONG).show()
+        }
+    }
+
     private fun testMakeForwarding() {
         val testOtp = "123456"
         val testMessage = "Test OTP forwarding: Your verification code is $testOtp"
@@ -152,6 +277,85 @@ class MainActivity : AppCompatActivity() {
     }
 }
 
+// SMS Observer to monitor SMS database changes (backup method for MIUI)
+class SmsObserver(private val context: Context, handler: Handler) : ContentObserver(handler) {
+    companion object {
+        private const val TAG = "SmsObserver"
+        private var lastSmsId = -1L
+    }
+
+    override fun onChange(selfChange: Boolean) {
+        super.onChange(selfChange)
+
+        try {
+            val cursor = context.contentResolver.query(
+                Uri.parse("content://sms/inbox"),
+                null,
+                null,
+                null,
+                "date DESC LIMIT 1"
+            )
+
+            cursor?.use {
+                if (it.moveToFirst()) {
+                    val idIndex = it.getColumnIndex("_id")
+                    val bodyIndex = it.getColumnIndex("body")
+                    val addressIndex = it.getColumnIndex("address")
+
+                    if (idIndex >= 0 && bodyIndex >= 0 && addressIndex >= 0) {
+                        val smsId = it.getLong(idIndex)
+
+                        // Check if this is a new SMS
+                        if (smsId != lastSmsId) {
+                            lastSmsId = smsId
+
+                            val body = it.getString(bodyIndex)
+                            val address = it.getString(addressIndex)
+
+                            Log.d(TAG, "New SMS detected via observer: $body")
+
+                            // Show notification
+                            showDebugNotification(context, "SMS Detected", body)
+
+                            val otp = OTPForwarder.extractOtpFromMessage(body)
+                            if (otp != null) {
+                                Log.d(TAG, "OTP found via observer: $otp")
+                                OTPForwarder.forwardOtpViaMake(otp, body, address, context)
+                            }
+                        }
+                    }
+                }
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Error in SMS observer", e)
+        }
+    }
+
+    private fun showDebugNotification(context: Context, title: String, content: String) {
+        val notificationManager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+        val channelId = "SMS_DEBUG_CHANNEL"
+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            val channel = NotificationChannel(
+                channelId,
+                "SMS Debug",
+                NotificationManager.IMPORTANCE_HIGH
+            )
+            notificationManager.createNotificationChannel(channel)
+        }
+
+        val notification = NotificationCompat.Builder(context, channelId)
+            .setSmallIcon(android.R.drawable.ic_dialog_info)
+            .setContentTitle(title)
+            .setContentText(content)
+            .setPriority(NotificationCompat.PRIORITY_HIGH)
+            .setAutoCancel(true)
+            .build()
+
+        notificationManager.notify(System.currentTimeMillis().toInt(), notification)
+    }
+}
+
 // Separate SMS Receiver class
 class SMSReceiver : BroadcastReceiver() {
     companion object {
@@ -159,51 +363,105 @@ class SMSReceiver : BroadcastReceiver() {
     }
 
     override fun onReceive(context: Context, intent: Intent) {
-        Log.d(TAG, "SMS received")
+        Log.d(TAG, "onReceive called - Action: ${intent.action}")
+
+        // Show notification immediately
+        showDebugNotification(context, "Broadcast Received", "Processing SMS...")
 
         if (Telephony.Sms.Intents.SMS_RECEIVED_ACTION == intent.action) {
+            Log.d(TAG, "SMS_RECEIVED_ACTION confirmed")
+
             val bundle = intent.extras
-            bundle?.let {
-                val pdus = it.get("pdus") as Array<*>?
-                pdus?.forEach { pdu ->
-                    try {
-                        val smsMessage = SmsMessage.createFromPdu(pdu as ByteArray)
-                        val messageBody = smsMessage.messageBody
-                        val sender = smsMessage.originatingAddress
+            if (bundle == null) {
+                Log.e(TAG, "Bundle is null")
+                return
+            }
 
-                        Log.d(TAG, "SMS from $sender: $messageBody")
+            val pdus = bundle.get("pdus") as Array<*>?
+            if (pdus == null) {
+                Log.e(TAG, "PDUs array is null")
+                return
+            }
 
-                        val otp = OTPForwarder.extractOtpFromMessage(messageBody)
-                        if (otp != null) {
-                            Log.d(TAG, "OTP detected: $otp")
-                            OTPForwarder.forwardOtpViaMake(otp, messageBody, sender ?: "Unknown", context)
-                        }
-                    } catch (e: Exception) {
-                        Log.e(TAG, "Error processing SMS", e)
+            Log.d(TAG, "Number of PDUs: ${pdus.size}")
+
+            pdus.forEach { pdu ->
+                try {
+                    val format = bundle.getString("format")
+                    val smsMessage = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M && format != null) {
+                        SmsMessage.createFromPdu(pdu as ByteArray, format)
+                    } else {
+                        SmsMessage.createFromPdu(pdu as ByteArray)
                     }
+
+                    val messageBody = smsMessage.messageBody
+                    val sender = smsMessage.originatingAddress
+
+                    Log.d(TAG, "SMS from $sender: $messageBody")
+                    showDebugNotification(context, "SMS from $sender", messageBody)
+
+                    val otp = OTPForwarder.extractOtpFromMessage(messageBody)
+                    if (otp != null) {
+                        Log.d(TAG, "OTP detected: $otp")
+                        OTPForwarder.forwardOtpViaMake(otp, messageBody, sender ?: "Unknown", context)
+                    }
+                } catch (e: Exception) {
+                    Log.e(TAG, "Error processing SMS", e)
                 }
             }
         }
     }
+
+    private fun showDebugNotification(context: Context, title: String, content: String) {
+        try {
+            val notificationManager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+            val channelId = "SMS_DEBUG_CHANNEL"
+
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                val channel = NotificationChannel(
+                    channelId,
+                    "SMS Debug",
+                    NotificationManager.IMPORTANCE_HIGH
+                )
+                notificationManager.createNotificationChannel(channel)
+            }
+
+            val notification = NotificationCompat.Builder(context, channelId)
+                .setSmallIcon(android.R.drawable.ic_dialog_info)
+                .setContentTitle(title)
+                .setContentText(content)
+                .setPriority(NotificationCompat.PRIORITY_HIGH)
+                .setAutoCancel(true)
+                .build()
+
+            notificationManager.notify(System.currentTimeMillis().toInt(), notification)
+        } catch (e: Exception) {
+            Log.e(TAG, "Error showing notification", e)
+        }
+    }
 }
 
-// OTP Forwarding logic separated into object
+// OTP Forwarding logic
 object OTPForwarder {
     private const val MAKE_WEBHOOK_URL = "https://hook.eu2.make.com/bnooc4nm64eu13l89hcq9f25tjvztiam"
     private const val TAG = "OTPForwarder"
     private const val CHANNEL_ID = "OTP_FORWARDING_CHANNEL"
 
     private val executorService: ExecutorService = Executors.newSingleThreadExecutor()
-    private val httpClient = OkHttpClient()
+    private val httpClient = OkHttpClient.Builder()
+        .connectTimeout(30, java.util.concurrent.TimeUnit.SECONDS)
+        .readTimeout(30, java.util.concurrent.TimeUnit.SECONDS)
+        .writeTimeout(30, java.util.concurrent.TimeUnit.SECONDS)
+        .build()
 
     // Enhanced OTP patterns
     private val otpPatterns = arrayOf(
-        Pattern.compile("\\b(\\d{4,8})\\b.*(?:OTP|otp|code|Code|PIN|pin|verification|verify)", Pattern.CASE_INSENSITIVE),
-        Pattern.compile("(?:OTP|otp|code|Code|PIN|pin|verification|verify).*\\b(\\d{4,8})\\b", Pattern.CASE_INSENSITIVE),
-        Pattern.compile("(?:use|enter).*\\b(\\d{4,8})\\b", Pattern.CASE_INSENSITIVE),
-        Pattern.compile("your.*\\b(\\d{4,8})\\b", Pattern.CASE_INSENSITIVE),
-        Pattern.compile("\\b(\\d{4,8})\\b.*(?:expire|valid|minutes)", Pattern.CASE_INSENSITIVE),
-        Pattern.compile("\\b(\\d{4,8})\\b", Pattern.CASE_INSENSITIVE)
+        Pattern.compile("(?:OTP|otp|Code|code|PIN|pin)\\s*(?:is|:)?\\s*(\\d{4,8})", Pattern.CASE_INSENSITIVE),
+        Pattern.compile("(\\d{4,8})\\s*(?:is your|is the)\\s*(?:OTP|otp|code|Code|PIN|pin)", Pattern.CASE_INSENSITIVE),
+        Pattern.compile("(?:Your|your)\\s*(?:OTP|otp|code|Code|PIN|pin)\\s*(?:is|:)?\\s*(\\d{4,8})", Pattern.CASE_INSENSITIVE),
+        Pattern.compile("(?:verification|verify|authentication)\\s*(?:code|Code)?\\s*(?:is|:)?\\s*(\\d{4,8})", Pattern.CASE_INSENSITIVE),
+        Pattern.compile("(?:use|enter|input)\\s*(\\d{4,8})", Pattern.CASE_INSENSITIVE),
+        Pattern.compile("\\b(\\d{4,8})\\b")
     )
 
     fun forwardOtpViaMake(otp: String, originalMessage: String, sender: String, context: Context) {
@@ -243,7 +501,7 @@ object OTPForwarder {
                     val notificationTitle = if (response.isSuccessful) {
                         "✅ OTP Forwarded: $otp"
                     } else {
-                        "❌ Forward Failed: $otp"
+                        "❌ Forward Failed: $otp (Code: ${response.code})"
                     }
 
                     showNotification(context, notificationTitle, "From: $sender")
@@ -256,13 +514,13 @@ object OTPForwarder {
         }
     }
 
-    private fun showNotification(context: Context, title: String, content: String) {
+    fun showNotification(context: Context, title: String, content: String) {
         val notificationManager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             val channel = NotificationChannel(
                 CHANNEL_ID,
-                "OTP Forwarding",
+                "OTP Forwarding Results",
                 NotificationManager.IMPORTANCE_DEFAULT
             )
             notificationManager.createNotificationChannel(channel)
@@ -288,6 +546,14 @@ object OTPForwarder {
                 val otp = matcher.group(1)
                 if (otp != null && otp.length >= 4 && otp.length <= 8) {
                     Log.d(TAG, "OTP found with pattern $index: $otp")
+
+                    // For the loosest pattern, check if message likely contains OTP
+                    if (index == otpPatterns.size - 1) {
+                        if (!isLikelyOtpMessage(message)) {
+                            continue
+                        }
+                    }
+
                     if (isLikelyOtp(otp, message)) {
                         return otp
                     }
@@ -298,27 +564,35 @@ object OTPForwarder {
         return null
     }
 
+    private fun isLikelyOtpMessage(message: String): Boolean {
+        val lowerMessage = message.lowercase()
+        val otpKeywords = listOf("otp", "code", "pin", "verification", "verify", "authenticate",
+            "confirm", "login", "security", "your", "use", "enter")
+        return otpKeywords.any { lowerMessage.contains(it) }
+    }
+
     private fun isLikelyOtp(otp: String, message: String): Boolean {
         val lowerMessage = message.lowercase()
 
         // Skip phone numbers
-        if (otp.length == 10 && (otp.startsWith("0") || otp.startsWith("1"))) {
+        if (otp.length == 10) {
             return false
         }
 
-        // Skip financial amounts
-        val nonOtpKeywords = listOf("amount", "balance", "credit", "debit", "payment")
-        if (nonOtpKeywords.any { lowerMessage.contains(it) }) {
+        // Skip financial amounts unless OTP keyword present
+        val financeKeywords = listOf("amount", "balance", "credit", "debit", "payment", "rs", "inr", "$")
+        val hasFinanceKeyword = financeKeywords.any { lowerMessage.contains(it) }
+        val hasOtpKeyword = listOf("otp", "code", "pin", "verification").any { lowerMessage.contains(it) }
+
+        if (hasFinanceKeyword && !hasOtpKeyword) {
             return false
         }
 
-        // Accept any message with these keywords
-        val otpKeywords = listOf("otp", "code", "pin", "verification", "verify", "authenticate", "login", "confirm", "security", "your")
-        return otpKeywords.any { lowerMessage.contains(it) }
+        return true
     }
 }
 
-// Background service that runs continuously
+// Background service
 class OTPService : Service() {
 
     companion object {
@@ -329,44 +603,202 @@ class OTPService : Service() {
     }
 
     private var smsReceiver: BroadcastReceiver? = null
+    private var smsObserver: SmsObserver? = null
 
     override fun onCreate() {
         super.onCreate()
-        Log.d(TAG, "OTPService created")
+        Log.d(TAG, "OTPService onCreate")
         isServiceRunning = true
     }
 
+    private var pollingHandler: Handler? = null
+    private var pollingRunnable: Runnable? = null
+    private var lastProcessedSmsId: Long = -1
+
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        Log.d(TAG, "OTPService started")
+        Log.d(TAG, "OTPService onStartCommand")
 
         createNotificationChannel()
         startForeground(NOTIFICATION_ID, createForegroundNotification())
 
-        // Register SMS receiver dynamically
-        try {
-            smsReceiver = SMSReceiver()
-            val filter = IntentFilter(Telephony.Sms.Intents.SMS_RECEIVED_ACTION)
-            filter.priority = 999
-            registerReceiver(smsReceiver, filter)
-            Log.d(TAG, "SMS receiver registered in service")
-        } catch (e: Exception) {
-            Log.e(TAG, "Error registering SMS receiver", e)
-        }
+        // Register SMS receiver
+        registerSmsReceiver()
+
+        // Also start SMS observer as backup for MIUI
+        startSmsObserver()
+
+        // Start polling as last resort for aggressive MIUI
+        startSmsPolling()
 
         return START_STICKY
     }
 
+    private fun startSmsPolling() {
+        Log.d(TAG, "Starting SMS polling")
+
+        // Get the last SMS ID to avoid processing old messages
+        getLastSmsId()?.let { lastProcessedSmsId = it }
+
+        pollingHandler = Handler(Looper.getMainLooper())
+        pollingRunnable = object : Runnable {
+            override fun run() {
+                checkForNewSms()
+                pollingHandler?.postDelayed(this, 2000) // Check every 2 seconds
+            }
+        }
+        pollingHandler?.post(pollingRunnable!!)
+    }
+
+    private fun getLastSmsId(): Long? {
+        try {
+            val cursor = contentResolver.query(
+                Uri.parse("content://sms/inbox"),
+                arrayOf("_id"),
+                null,
+                null,
+                "_id DESC LIMIT 1"
+            )
+            cursor?.use {
+                if (it.moveToFirst()) {
+                    return it.getLong(0)
+                }
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Error getting last SMS ID", e)
+        }
+        return null
+    }
+
+    private fun checkForNewSms() {
+        try {
+            val cursor = contentResolver.query(
+                Uri.parse("content://sms/inbox"),
+                arrayOf("_id", "address", "body", "date"),
+                "_id > ?",
+                arrayOf(lastProcessedSmsId.toString()),
+                "_id ASC"
+            )
+
+            cursor?.use {
+                while (it.moveToNext()) {
+                    val smsId = it.getLong(0)
+                    val address = it.getString(1)
+                    val body = it.getString(2)
+                    val date = it.getLong(3)
+
+                    // Check if this SMS is recent (within last 30 seconds)
+                    if (System.currentTimeMillis() - date < 30000) {
+                        Log.d(TAG, "New SMS detected via polling: $body")
+
+                        // Show debug notification
+                        showDebugNotification("SMS Detected (Polling)", body)
+
+                        val otp = OTPForwarder.extractOtpFromMessage(body)
+                        if (otp != null) {
+                            Log.d(TAG, "OTP found via polling: $otp")
+                            OTPForwarder.forwardOtpViaMake(otp, body, address, this)
+                        }
+
+                        lastProcessedSmsId = smsId
+                    }
+                }
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Error in SMS polling", e)
+        }
+    }
+
+    private fun showDebugNotification(title: String, content: String) {
+        try {
+            val notificationManager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+            val channelId = "SMS_DEBUG_CHANNEL"
+
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                val channel = NotificationChannel(
+                    channelId,
+                    "SMS Debug",
+                    NotificationManager.IMPORTANCE_HIGH
+                )
+                notificationManager.createNotificationChannel(channel)
+            }
+
+            val notification = NotificationCompat.Builder(this, channelId)
+                .setSmallIcon(android.R.drawable.ic_dialog_info)
+                .setContentTitle(title)
+                .setContentText(content)
+                .setPriority(NotificationCompat.PRIORITY_HIGH)
+                .setAutoCancel(true)
+                .build()
+
+            notificationManager.notify(System.currentTimeMillis().toInt(), notification)
+        } catch (e: Exception) {
+            Log.e(TAG, "Error showing notification", e)
+        }
+    }
+
+    private fun registerSmsReceiver() {
+        try {
+            if (smsReceiver != null) {
+                Log.d(TAG, "SMS receiver already registered")
+                return
+            }
+
+            smsReceiver = SMSReceiver()
+            val filter = IntentFilter().apply {
+                addAction(Telephony.Sms.Intents.SMS_RECEIVED_ACTION)
+                priority = 2147483647 // Maximum priority
+            }
+
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                registerReceiver(smsReceiver, filter, Context.RECEIVER_EXPORTED)
+            } else {
+                registerReceiver(smsReceiver, filter)
+            }
+
+            Log.d(TAG, "SMS receiver registered successfully")
+
+        } catch (e: Exception) {
+            Log.e(TAG, "Error registering SMS receiver", e)
+        }
+    }
+
+    private fun startSmsObserver() {
+        try {
+            smsObserver = SmsObserver(this, Handler(Looper.getMainLooper()))
+            contentResolver.registerContentObserver(
+                Uri.parse("content://sms/"),
+                true,
+                smsObserver!!
+            )
+            Log.d(TAG, "SMS Observer started in service")
+        } catch (e: Exception) {
+            Log.e(TAG, "Error starting SMS observer in service", e)
+        }
+    }
+
     override fun onDestroy() {
         super.onDestroy()
-        Log.d(TAG, "OTPService destroyed")
+        Log.d(TAG, "OTPService onDestroy")
 
         try {
             smsReceiver?.let {
                 unregisterReceiver(it)
-                Log.d(TAG, "SMS receiver unregistered")
+                smsReceiver = null
+            }
+
+            smsObserver?.let {
+                contentResolver.unregisterContentObserver(it)
+                smsObserver = null
+            }
+
+            // Stop polling
+            pollingRunnable?.let {
+                pollingHandler?.removeCallbacks(it)
+                pollingHandler = null
+                pollingRunnable = null
             }
         } catch (e: Exception) {
-            Log.w(TAG, "Error unregistering receiver", e)
+            Log.w(TAG, "Error in cleanup", e)
         }
 
         isServiceRunning = false
@@ -403,7 +835,7 @@ class OTPService : Service() {
 
         return NotificationCompat.Builder(this, CHANNEL_ID)
             .setContentTitle("📱 OTP Forwarder Active")
-            .setContentText("Listening for SMS messages...")
+            .setContentText("Monitoring SMS messages...")
             .setSmallIcon(android.R.drawable.ic_dialog_email)
             .setContentIntent(pendingIntent)
             .setOngoing(true)

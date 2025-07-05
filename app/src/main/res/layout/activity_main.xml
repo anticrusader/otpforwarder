@@ -11,30 +11,55 @@
         android:orientation="vertical">
 
         <!-- App Header -->
-        <LinearLayout
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:orientation="vertical"
-            android:gravity="center"
-            android:layout_marginBottom="24dp">
+        <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical"
+    android:padding="16dp">
 
-            <TextView
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:text="📱 OTP Forwarder"
-                android:textSize="24sp"
-                android:textStyle="bold"
-                android:textColor="@android:color/black"
-                android:layout_marginBottom="4dp" />
+    <TextView
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="OTP Auto Forwarder"
+        android:textSize="24sp"
+        android:textStyle="bold"
+        android:layout_gravity="center"
+        android:layout_marginBottom="24dp" />
 
-            <TextView
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:text="Make.com Integration - Fast &amp; Free"
-                android:textSize="14sp"
-                android:textColor="@android:color/darker_gray" />
+    <Switch
+        android:id="@+id/autoForwardSwitch"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="Auto Forward OTP"
+        android:textSize="18sp"
+        android:padding="16dp"
+        android:layout_marginBottom="16dp" />
 
-        </LinearLayout>
+    <TextView
+        android:id="@+id/lastOtpTextView"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="🔍 No OTPs forwarded yet"
+        android:textSize="16sp"
+        android:padding="16dp"
+        android:background="#F0F0F0"
+        android:layout_marginBottom="16dp" />
+
+    <Button
+        android:id="@+id/testButton"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="Test Make.com Webhook"
+        android:layout_marginBottom="8dp" />
+
+    <Button
+        android:id="@+id/debugButton"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="Debug SMS Access"
+        android:backgroundTint="#FF6B6B" />
+
+</LinearLayout>
 
         <!-- Make.com Status -->
         <com.google.android.material.card.MaterialCardView
