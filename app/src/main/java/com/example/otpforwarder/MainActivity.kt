@@ -61,6 +61,12 @@ class MainActivity : AppCompatActivity() {
             val intent = Intent(this, SmsTestActivity::class.java)
             startActivity(intent)
         }
+        
+        val notifAccessBtn = findViewById<Button>(R.id.notificationAccessButton)
+        notifAccessBtn.setOnClickListener {
+            openNotificationAccessSettings()
+        }
+
 
         autoForwardSwitch.setOnCheckedChangeListener { _, isChecked ->
             Log.d(TAG, "Auto-forward switch changed: $isChecked")
@@ -702,6 +708,6 @@ class OTPService : Service() {
             .setSilent(true)
             .build()
     }
-    
+
 
 }
