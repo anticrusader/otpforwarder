@@ -33,6 +33,7 @@ class MainActivity : AppCompatActivity() {
 
     private lateinit var autoForwardSwitch: Switch
     private lateinit var lastOtpTextView: TextView
+    private lateinit var lastSentOtpTextView: TextView
     private lateinit var testButton: Button
     private lateinit var debugButton: Button
     private var smsObserver: SmsObserver? = null
@@ -45,6 +46,10 @@ class MainActivity : AppCompatActivity() {
 
         autoForwardSwitch = findViewById(R.id.autoForwardSwitch)
         lastOtpTextView = findViewById(R.id.lastOtpTextView)
+        lastSentOtpTextView = findViewById(R.id.lastSentOtpTextView)
+
+
+
         testButton = findViewById(R.id.testButton)
         debugButton = findViewById(R.id.debugButton)
 
@@ -102,6 +107,16 @@ class MainActivity : AppCompatActivity() {
         if (autoForwardSwitch.isChecked) {
             checkRecentSms()
         }
+
+        val prefs = getSharedPreferences("OTPForwarder", Context.MODE_PRIVATE)
+        val lastSentOtp = prefs.getString("last_sent_otp", null)
+        lastSentOtpTextView.text = if (lastSentOtp != null) {
+            "Last OTP sent: $lastSentOtp"
+        } else {
+            "Last OTP sent: -"
+        }
+
+
     }
 
     override fun onPause() {
@@ -213,10 +228,19 @@ class MainActivity : AppCompatActivity() {
 
                         Log.d(TAG, "Recent SMS found: $body")
 
+                        if (body.contains("Duplicate OTP Skipped") || body.contains("OTP Detected") || body.contains("OTP Forwarded")) {
+                            Log.d(TAG, "Skipping internal app debug message")
+                            return
+                        }
+
                         val otp = OTPForwarder.extractOtpFromMessage(body)
-                        if (otp != null && OtpCache.isNewOtp(otp, body)) {
+                        val key = "OTP_${otp}_${address.take(20)}"
+                        if (otp != null && OtpCache.isNewOtp(key)) {
                             Log.d(TAG, "OTP found in recent SMS: $otp")
                             OTPForwarder.forwardOtpViaMake(otp, body, address, this)
+
+                            val prefs = getSharedPreferences("OTPForwarder", Context.MODE_PRIVATE)
+                            prefs.edit().putString("last_sent_otp", otp).apply()
                         }
                     }
                 }
@@ -237,15 +261,12 @@ class MainActivity : AppCompatActivity() {
 
     private fun openNotificationAccessSettings() {
         try {
-            val intent = Intent(android.provider.Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS)
-            intent.flags = Intent.FLAG_ACTIVITY_NEW_TASK
+            val intent = Intent("android.settings.ACTION_NOTIFICATION_LISTENER_SETTINGS")
             startActivity(intent)
         } catch (e: Exception) {
-            Toast.makeText(this, "Please enable Notification Access manually in settings", Toast.LENGTH_LONG).show()
-            Log.e(TAG, "Failed to open Notification Access settings", e)
+            Toast.makeText(this, "Please enable Notification Access in Settings", Toast.LENGTH_LONG).show()
         }
     }
-
 
     private fun testMakeForwarding() {
         val testOtp = "123456"
@@ -253,7 +274,15 @@ class MainActivity : AppCompatActivity() {
         val testSender = "TEST"
 
         Toast.makeText(this, "🧪 Sending test OTP to Make.com...", Toast.LENGTH_SHORT).show()
-        OTPForwarder.forwardOtpViaMake(testOtp, testMessage, testSender, this)
+        val key = "OTP_${testOtp}_${testSender.take(20)}"
+        if (OtpCache.isNewOtp(key)) {
+            OTPForwarder.forwardOtpViaMake(testOtp, testMessage, testSender, this)
+
+            val prefs = getSharedPreferences("OTPForwarder", Context.MODE_PRIVATE)
+            prefs.edit().putString("last_sent_otp", testOtp).apply()
+        } else {
+            Log.d(TAG, "Test OTP already sent")
+        }
     }
 }
 // SMS Observer to monitor SMS database changes (backup method for MIUI)
@@ -673,4 +702,6 @@ class OTPService : Service() {
             .setSilent(true)
             .build()
     }
+    
+
 }

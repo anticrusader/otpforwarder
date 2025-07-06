@@ -124,6 +124,9 @@ object OTPForwarder {
                 showNotification(context, "❌ Error forwarding OTP", e.message ?: "Unknown error")
             }
         }
+        val prefs = context.getSharedPreferences("OTPForwarder", Context.MODE_PRIVATE)
+        prefs.edit().putString("last_sent_otp", otp).apply()
+
     }
 
     fun showNotification(context: Context, title: String, content: String) {
@@ -156,7 +159,7 @@ object OTPForwarder {
             val matcher = pattern.matcher(message)
             if (matcher.find()) {
                 val otp = matcher.group(1)
-                if (otp != null && otp.length >= 4 && otp.length <= 8) {
+                if (otp != null && otp.length >= 5 && otp.length <= 10) {
                     Log.d(TAG, "OTP found with pattern $index: $otp")
 
                     // For the loosest pattern, check if message likely contains OTP
@@ -178,8 +181,9 @@ object OTPForwarder {
 
     private fun isLikelyOtpMessage(message: String): Boolean {
         val lowerMessage = message.lowercase()
-        val otpKeywords = listOf("otp", "code", "pin", "verification", "verify", "authenticate",
-            "confirm", "login", "security", "your", "use", "enter")
+        //val otpKeywords = listOf("otp", "code", "pin", "verification", "verify", "authenticate",
+           // "confirm", "login", "security", "your", "use", "enter")
+        val otpKeywords = listOf("otp", "code", "pin", "verification", "verify", "authenticate")
         return otpKeywords.any { lowerMessage.contains(it) }
     }
 
@@ -187,7 +191,7 @@ object OTPForwarder {
         val lowerMessage = message.lowercase()
 
         // Skip phone numbers
-        if (otp.length == 10) {
+        if (otp.length == 11) {
             return false
         }
 
@@ -225,4 +229,5 @@ object OtpCache {
         return true
     }
 }
+
 

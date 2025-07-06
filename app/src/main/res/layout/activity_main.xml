@@ -17,15 +17,7 @@
         android:src="@drawable/logo"
         android:contentDescription="OTP Forwarder Logo" />
 
-    <TextView
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:text="OTP Auto Forwarder"
-        android:textSize="24sp"
-        android:textStyle="bold"
-        android:textColor="#FFFFFF"
-        android:layout_gravity="center"
-        android:layout_marginBottom="24dp" />
+    
 
     <Switch
         android:id="@+id/autoForwardSwitch"
@@ -47,6 +39,16 @@
         android:padding="16dp"
         android:background="#2a2a2a"
         android:layout_marginBottom="16dp" />
+		
+		<TextView
+    android:id="@+id/lastSentOtpTextView"
+    android:layout_width="wrap_content"
+    android:layout_height="wrap_content"
+    android:text="Last OTP sent: -"
+    android:textColor="@android:color/white"
+    android:layout_marginTop="8dp"
+    android:textSize="16sp" />
+
 
     <Button
         android:id="@+id/testButton"
@@ -74,6 +76,7 @@
         android:backgroundTint="#3DDC84"
         android:textColor="#FFFFFF"
         android:layout_marginBottom="16dp" />
+		
 
     <!-- Info Card -->
     <androidx.cardview.widget.CardView
@@ -117,7 +120,7 @@
             <TextView
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:text="✓ Detects 4-8 digit OTPs automatically\n✓ Forwards with original message context\n✓ Secure Make.com backend\n✓ Email delivery confirmation"
+                android:text="✓ Detects 5-10 digit OTPs automatically\n✓ Forwards with original message context\n✓ Secure Make.com backend\n✓ Email delivery confirmation"
                 android:textSize="14sp"
                 android:textColor="#CCCCCC"
                 android:lineSpacingExtra="4dp" />
