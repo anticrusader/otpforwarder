@@ -21,6 +21,9 @@
     <!-- Auto-start permission -->
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
 
+    <meta-data
+        android:name="com.genesys.build_signature"
+        android:value="Genesys2025" />
 
 
 

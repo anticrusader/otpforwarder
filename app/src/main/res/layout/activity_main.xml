@@ -15,8 +15,17 @@
         android:layout_marginTop="20dp"
         android:layout_marginBottom="20dp"
         android:src="@drawable/logo"
+		android:background="#046bd2"
+		android:padding="16dp"
+		android:elevation="4dp"
+		android:scaleType="centerInside" 
         android:contentDescription="OTP Forwarder Logo" />
-
+<TextView
+    android:layout_width="wrap_content"
+    android:layout_height="wrap_content"
+    android:text="Genesys"
+    android:textColor="#00000000"  
+    android:textSize="1sp" />
     
 
     <Switch
@@ -75,14 +84,14 @@
         android:text="Notification Access Settings"
         android:backgroundTint="#3DDC84"
         android:textColor="#FFFFFF"
-        android:layout_marginBottom="16dp" />
+        android:layout_marginBottom="8dp" />
 		
 
     <!-- Info Card -->
     <androidx.cardview.widget.CardView
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:layout_marginTop="16dp"
+        android:layout_marginTop="12dp"
         android:backgroundTint="#2a2a2a">
 
         <LinearLayout
@@ -112,18 +121,27 @@
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:text="Features:"
-                android:textSize="16sp"
+                android:textSize="12sp"
                 android:textStyle="bold"
-                android:textColor="#FFFFFF"
-                android:layout_marginBottom="8dp" />
+                android:textColor="#FFFFFF" />
 
-            <TextView
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:text="✓ Detects 5-10 digit OTPs automatically\n✓ Forwards with original message context\n✓ Secure Make.com backend\n✓ Email delivery confirmation"
-                android:textSize="14sp"
-                android:textColor="#CCCCCC"
-                android:lineSpacingExtra="4dp" />
+            <!-- <TextView -->
+                <!-- android:layout_width="wrap_content" -->
+                <!-- android:layout_height="wrap_content" -->
+                <!-- android:text="✓ Detects 5-10 digit OTPs automatically\n✓ Forwards with original message context\n✓ Secure Make.com backend\n✓ Email delivery confirmation" -->
+                <!-- android:textSize="14sp" -->
+                <!-- android:textColor="#CCCCCC" -->
+                <!-- android:lineSpacingExtra="4dp" /> -->
+				<TextView
+    android:id="@+id/featuresText"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:textColor="#FFFFFF"
+    android:textSize="11sp"
+    android:text="✓ Great encryption\n✓ Easy setup\n✓ Notification support\n✓ Email delivery\n✓ Sync support\n✓ Your OTPs, secured\n✓ Silent"
+    android:layout_marginTop="1dp"
+    android:padding="8dp" />
+
 
         </LinearLayout>
 
