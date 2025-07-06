@@ -88,6 +88,7 @@ class `OTPNotificationListener` : NotificationListenerService() {
 
             // Check if message contains a potential OTP
             val hasOtpPattern = fullMessage.contains(Regex("\\b\\d{4,8}\\b"))
+            Log.d("pattern",fullMessage)
             if (!hasOtpPattern) {
                 return
             }
@@ -108,19 +109,11 @@ class `OTPNotificationListener` : NotificationListenerService() {
 
             // Try to extract OTP
             val otp = `OTPForwarder`.extractOtpFromMessage(fullMessage)
-            if (otp != null) {
-                // Check if this exact OTP was sent recently
-                val otpKey = "OTP_${otp}_${title.take(20)}"
-                if (`OTPForwarder`.wasRecentlyForwarded(otpKey)) {
-                    Log.d(TAG, "OTP $otp was recently forwarded, skipping")
-                    return
-                }
+            if (otp != null && OtpCache.isNewOtp(otp)) {
+                Log.d(TAG, "OTP found: $otp - Forwarding ONCE")
 
-                // Mark as processed BEFORE forwarding
                 processedNotifications.add(contentKey)
                 saveProcessedNotifications()
-
-                Log.d(TAG, "OTP found: $otp - Forwarding ONCE")
 
                 // Show debug notification
                 `OTPForwarder`.showNotification(
@@ -136,7 +129,10 @@ class `OTPNotificationListener` : NotificationListenerService() {
                     title.ifEmpty { sbn.packageName },
                     this
                 )
+            } else {
+                Log.d(TAG, "Duplicate OTP skipped: $otp")
             }
+
         } catch (e: Exception) {
             Log.e(TAG, "Error processing notification", e)
         }

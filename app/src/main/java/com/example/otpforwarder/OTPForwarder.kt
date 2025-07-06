@@ -203,3 +203,26 @@ object OTPForwarder {
         return true
     }
 }
+// File: OtpCache.kt
+object OtpCache {
+    private var lastOtp: String? = null
+    private var lastMessageHash: Int = 0
+    private var lastTimestamp: Long = 0
+
+    private const val DUPLICATE_TIME_WINDOW_MS = 5000L // 5 seconds
+
+    fun isNewOtp(otp: String, fullMessage: String? = null): Boolean {
+        val now = System.currentTimeMillis()
+        val hash = fullMessage?.hashCode() ?: otp.hashCode()
+
+        if (otp == lastOtp && hash == lastMessageHash && (now - lastTimestamp) < DUPLICATE_TIME_WINDOW_MS) {
+            return false
+        }
+
+        lastOtp = otp
+        lastMessageHash = hash
+        lastTimestamp = now
+        return true
+    }
+}
+

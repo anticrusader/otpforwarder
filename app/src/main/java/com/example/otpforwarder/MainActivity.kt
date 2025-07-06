@@ -43,29 +43,23 @@ class MainActivity : AppCompatActivity() {
 
         Log.d(TAG, "MainActivity created")
 
-        // Initialize views
         autoForwardSwitch = findViewById(R.id.autoForwardSwitch)
         lastOtpTextView = findViewById(R.id.lastOtpTextView)
         testButton = findViewById(R.id.testButton)
-        debugButton = findViewById(R.id.debugButton) // Add this button to your layout
+        debugButton = findViewById(R.id.debugButton)
 
-        // Check and request permissions
         checkAllPermissions()
 
-        // Set up test button
         testButton.setOnClickListener { testMakeForwarding() }
 
-        // Set up debug button
         debugButton.setOnClickListener {
             val intent = Intent(this, SmsTestActivity::class.java)
             startActivity(intent)
         }
 
-        // Set up auto-forward switch
         autoForwardSwitch.setOnCheckedChangeListener { _, isChecked ->
             Log.d(TAG, "Auto-forward switch changed: $isChecked")
 
-            // Save preference
             getSharedPreferences("OTPForwarder", Context.MODE_PRIVATE)
                 .edit()
                 .putBoolean("auto_forward_enabled", isChecked)
@@ -73,7 +67,6 @@ class MainActivity : AppCompatActivity() {
 
             if (isChecked) {
                 if (checkAllPermissions()) {
-                    // Check if notification access is enabled
                     if (!isNotificationServiceEnabled()) {
                         Toast.makeText(this, "⚠️ Please enable Notification Access", Toast.LENGTH_LONG).show()
                         openNotificationAccessSettings()
@@ -82,7 +75,6 @@ class MainActivity : AppCompatActivity() {
                     }
 
                     startOTPService()
-                    // Also start SMS observer as backup
                     startSmsObserver()
                     Toast.makeText(this, "✅ OTP forwarding enabled", Toast.LENGTH_LONG).show()
                     lastOtpTextView.text = "📱 Monitoring SMS via notifications..."
@@ -97,7 +89,6 @@ class MainActivity : AppCompatActivity() {
             }
         }
 
-        // Restore preference
         val prefs = getSharedPreferences("OTPForwarder", Context.MODE_PRIVATE)
         val isEnabled = prefs.getBoolean("auto_forward_enabled", false)
         if (isEnabled) {
@@ -108,8 +99,6 @@ class MainActivity : AppCompatActivity() {
     override fun onResume() {
         super.onResume()
         isAppActive = true
-
-        // Check for missed messages when app resumes
         if (autoForwardSwitch.isChecked) {
             checkRecentSms()
         }
@@ -123,15 +112,12 @@ class MainActivity : AppCompatActivity() {
     private fun checkAllPermissions(): Boolean {
         val permissions = mutableListOf<String>()
 
-        // SMS permissions
         if (ContextCompat.checkSelfPermission(this, Manifest.permission.RECEIVE_SMS) != PackageManager.PERMISSION_GRANTED) {
             permissions.add(Manifest.permission.RECEIVE_SMS)
         }
         if (ContextCompat.checkSelfPermission(this, Manifest.permission.READ_SMS) != PackageManager.PERMISSION_GRANTED) {
             permissions.add(Manifest.permission.READ_SMS)
         }
-
-        // Notification permission for Android 13+
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             if (ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
                 permissions.add(Manifest.permission.POST_NOTIFICATIONS)
@@ -212,7 +198,7 @@ class MainActivity : AppCompatActivity() {
                 Uri.parse("content://sms/inbox"),
                 null,
                 "date > ?",
-                arrayOf((System.currentTimeMillis() - 60000).toString()), // Last minute
+                arrayOf((System.currentTimeMillis() - 60000).toString()),
                 "date DESC"
             )
 
@@ -227,10 +213,10 @@ class MainActivity : AppCompatActivity() {
 
                         Log.d(TAG, "Recent SMS found: $body")
 
-                        val otp = `OTPForwarder`.extractOtpFromMessage(body)
-                        if (otp != null) {
+                        val otp = OTPForwarder.extractOtpFromMessage(body)
+                        if (otp != null && OtpCache.isNewOtp(otp, body)) {
                             Log.d(TAG, "OTP found in recent SMS: $otp")
-                            `OTPForwarder`.forwardOtpViaMake(otp, body, address, this)
+                            OTPForwarder.forwardOtpViaMake(otp, body, address, this)
                         }
                     }
                 }
@@ -251,12 +237,15 @@ class MainActivity : AppCompatActivity() {
 
     private fun openNotificationAccessSettings() {
         try {
-            val intent = Intent("android.settings.ACTION_NOTIFICATION_LISTENER_SETTINGS")
+            val intent = Intent(android.provider.Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS)
+            intent.flags = Intent.FLAG_ACTIVITY_NEW_TASK
             startActivity(intent)
         } catch (e: Exception) {
-            Toast.makeText(this, "Please enable Notification Access in Settings", Toast.LENGTH_LONG).show()
+            Toast.makeText(this, "Please enable Notification Access manually in settings", Toast.LENGTH_LONG).show()
+            Log.e(TAG, "Failed to open Notification Access settings", e)
         }
     }
+
 
     private fun testMakeForwarding() {
         val testOtp = "123456"
@@ -264,10 +253,9 @@ class MainActivity : AppCompatActivity() {
         val testSender = "TEST"
 
         Toast.makeText(this, "🧪 Sending test OTP to Make.com...", Toast.LENGTH_SHORT).show()
-        `OTPForwarder`.forwardOtpViaMake(testOtp, testMessage, testSender, this)
+        OTPForwarder.forwardOtpViaMake(testOtp, testMessage, testSender, this)
     }
 }
-
 // SMS Observer to monitor SMS database changes (backup method for MIUI)
 class SmsObserver(private val context: Context, handler: Handler) : ContentObserver(handler) {
     companion object {
@@ -309,7 +297,7 @@ class SmsObserver(private val context: Context, handler: Handler) : ContentObser
                             showDebugNotification(context, "SMS Detected", body)
 
                             val otp = `OTPForwarder`.extractOtpFromMessage(body)
-                            if (otp != null) {
+                            if (otp != null && OtpCache.isNewOtp(otp,body)) {
                                 Log.d(TAG, "OTP found via observer: $otp")
                                 `OTPForwarder`.forwardOtpViaMake(otp, body, address, context)
                             }
@@ -392,7 +380,7 @@ class SMSReceiver : BroadcastReceiver() {
                     showDebugNotification(context, "SMS from $sender", messageBody)
 
                     val otp = `OTPForwarder`.extractOtpFromMessage(messageBody)
-                    if (otp != null) {
+                    if (otp != null && OtpCache.isNewOtp(otp, messageBody)) {
                         Log.d(TAG, "OTP detected: $otp")
                         `OTPForwarder`.forwardOtpViaMake(otp, messageBody, sender ?: "Unknown", context)
                     }
@@ -536,7 +524,7 @@ class OTPService : Service() {
                         showDebugNotification("SMS Detected (Polling)", body)
 
                         val otp = `OTPForwarder`.extractOtpFromMessage(body)
-                        if (otp != null) {
+                        if (otp != null && OtpCache.isNewOtp(otp,body)) {
                             Log.d(TAG, "OTP found via polling: $otp")
                             `OTPForwarder`.forwardOtpViaMake(otp, body, address, this)
                         }

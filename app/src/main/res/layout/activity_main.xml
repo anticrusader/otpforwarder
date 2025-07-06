@@ -64,6 +64,15 @@
         android:text="Debug SMS Access"
         android:backgroundTint="#FF6B6B"
         android:textColor="#FFFFFF"
+        android:layout_marginBottom="8dp" />
+
+    <Button
+        android:id="@+id/notificationAccessButton"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="Notification Access Settings"
+        android:backgroundTint="#3DDC84"
+        android:textColor="#FFFFFF"
         android:layout_marginBottom="16dp" />
 
     <!-- Info Card -->
