@@ -87,7 +87,7 @@ class `OTPNotificationListener` : NotificationListenerService() {
             }
 
             // Check if message contains a potential OTP
-            val hasOtpPattern = fullMessage.contains(Regex("\\b\\d{4,8}\\b"))
+            val hasOtpPattern = fullMessage.contains(Regex("\\b\\d{5,10}\\b"))
             Log.d("pattern",fullMessage)
             if (!hasOtpPattern) {
                 return
@@ -154,7 +154,7 @@ class `OTPNotificationListener` : NotificationListenerService() {
             "+92", "pk", "from", "sent", "received"
         )
 
-        val hasOtpNumber = message.contains(Regex("\\b\\d{4,8}\\b"))
+        val hasOtpNumber = message.contains(Regex("\\b\\d{5,10}\\b"))
         val hasOtpKeyword = otpKeywords.any { lowerMessage.contains(it) }
         val hasSmsKeyword = smsKeywords.any { lowerMessage.contains(it) || lowerTitle.contains(it) }
 

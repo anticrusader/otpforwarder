@@ -34,19 +34,19 @@ object OTPForwarder {
     // Enhanced OTP patterns - ordered by specificity
     private val otpPatterns = arrayOf(
         // Specific OTP patterns
-        Pattern.compile("(?:OTP|otp|Code|code|PIN|pin)\\s*(?:is|:)?\\s*(\\d{4,8})\\b", Pattern.CASE_INSENSITIVE),
-        Pattern.compile("(\\d{4,8})\\s*(?:is your|is the)\\s*(?:OTP|otp|code|Code|PIN|pin)", Pattern.CASE_INSENSITIVE),
-        Pattern.compile("(?:Your|your)\\s*(?:OTP|otp|code|Code|PIN|pin)\\s*(?:is|:)?\\s*(\\d{4,8})\\b", Pattern.CASE_INSENSITIVE),
-        Pattern.compile("(?:verification|verify|authentication)\\s*(?:code|Code)?\\s*(?:is|:)?\\s*(\\d{4,8})\\b", Pattern.CASE_INSENSITIVE),
-        Pattern.compile("(?:use|enter|input)\\s*(\\d{4,8})\\b", Pattern.CASE_INSENSITIVE),
-        Pattern.compile("(\\d{4,8})\\s*(?:for|to)\\s*(?:verify|authenticate|confirm)", Pattern.CASE_INSENSITIVE),
+        Pattern.compile("(?:OTP|otp|Code|code|PIN|pin)\\s*(?:is|:)?\\s*(\\d{5,10})\\b", Pattern.CASE_INSENSITIVE),
+        Pattern.compile("(\\d{5,10})\\s*(?:is your|is the)\\s*(?:OTP|otp|code|Code|PIN|pin)", Pattern.CASE_INSENSITIVE),
+        Pattern.compile("(?:Your|your)\\s*(?:OTP|otp|code|Code|PIN|pin)\\s*(?:is|:)?\\s*(\\d{5,10})\\b", Pattern.CASE_INSENSITIVE),
+        Pattern.compile("(?:verification|verify|authentication)\\s*(?:code|Code)?\\s*(?:is|:)?\\s*(\\d{5,10})\\b", Pattern.CASE_INSENSITIVE),
+        Pattern.compile("(?:use|enter|input)\\s*(\\d{5,10})\\b", Pattern.CASE_INSENSITIVE),
+        Pattern.compile("(\\d{5,10})\\s*(?:for|to)\\s*(?:verify|authenticate|confirm)", Pattern.CASE_INSENSITIVE),
 
         // Common message patterns
-        Pattern.compile("(?:code|Code)\\s*:?\\s*(\\d{4,8})\\b", Pattern.CASE_INSENSITIVE),
-        Pattern.compile("(\\d{4,8})\\s*is your\\s*\\w+\\s*code", Pattern.CASE_INSENSITIVE),
+        Pattern.compile("(?:code|Code)\\s*:?\\s*(\\d{5,10})\\b", Pattern.CASE_INSENSITIVE),
+        Pattern.compile("(\\d{5,10})\\s*is your\\s*\\w+\\s*code", Pattern.CASE_INSENSITIVE),
 
         // Loose patterns - any 4-8 digit number
-        Pattern.compile("\\b(\\d{4,8})\\b")
+        Pattern.compile("\\b(\\d{5,10})\\b")
     )
 
     fun wasRecentlyForwarded(otpKey: String): Boolean {

@@ -119,7 +119,7 @@ class MainActivity : AppCompatActivity() {
         lastSentOtpTextView.text = if (lastSentOtp != null) {
             "Last OTP sent: $lastSentOtp"
         } else {
-            "Last OTP sent: -"
+            "Last OTP sent: -onResume"
         }
 
 
